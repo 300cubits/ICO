@@ -260,9 +260,9 @@ contract teuInitialTokenSale is Ownable {
 
     event LogContribution(address indexed _contributor, uint256 _etherAmount, uint256 _basicTokenAmount, uint256 _timeBonusTokenAmount, uint256 _volumeBonusTokenAmount);
     event LogContributionBitcoin(address indexed _contributor, uint256 _bitcoinAmount, uint256 _etherAmount, uint256 _basicTokenAmount, uint256 _timeBonusTokenAmount, uint256 _volumeBonusTokenAmount, uint _contributionDatetime);
-    event LogOffChainContribution(address indexed _contributor, uint256 _etherAmount, uint256 _tokenAmount, uint _contributionDatetime);
+    event LogOffChainContribution(address indexed _contributor, uint256 _etherAmount, uint256 _tokenAmount);
     event LogReferralAward(address indexed _refereeWallet, address indexed _referrerWallet, uint256 _referralBonusAmount);
-    event LogTokenCollected(address indexed _contributer, uint256 _collectedEtherAmount, uint256 _collectedTokenAmount);
+    event LogTokenCollected(address indexed _contributer, uint256 _collectedTokenAmount);
 
 
     TeuToken			                constant private		token = TeuToken(0xeEAc3F8da16bb0485a4A11c5128b0518DaC81448); // hard coded due to token already deployed
@@ -277,7 +277,6 @@ contract teuInitialTokenSale is Ownable {
     mapping (address => uint256)                private     referralContribution;  // record the referral contribution amount in ether for claiming of referral bonus
     mapping (address => uint)                   private     lastContribitionDate;  // record the last contribution date/time for valid the referral bonus claiming period
 
-    mapping (address => uint256)                private     contribution;  // record the contributed amount in ether of each contributor
     mapping (address => uint256)                private     collectableToken;  // record the token amount to be collected of each contributor
     mapping (address => uint8)                  private     clientIdentRejectList;  // record a list of contributors who do not pass the client identification process
     bool                                        private     isCollectTokenStart = false;  // flag to indicate if token collection is started
@@ -427,13 +426,6 @@ contract teuInitialTokenSale is Ownable {
 
 
     /**
-    * @dev called by contract owener to deposit ethers to the contract for withdrawal by rejected contributors after the client identification process 
-    */
-    function depositForWithdrawal() public payable onlyOwner {
-        require(msg.value > 0);
-    }
-
-    /**
     * @dev called by contributors to record a contribution 
     */
     function contribute() public payable saleIsOn overMinContribution(msg.value) underMaxTokenPool {
@@ -445,7 +437,6 @@ contract teuInitialTokenSale is Ownable {
         lastContribitionDate[msg.sender] = getCurrentDatetime();
         referralContribution[msg.sender] = referralContribution[msg.sender].add256(msg.value);
         
-        contribution[msg.sender] = contribution[msg.sender].add256(msg.value);
         collectableToken[msg.sender] = collectableToken[msg.sender].add256(_totalToken);
         totalCollectableToken = totalCollectableToken.add256(_totalToken);
         assert(etherHolderWallet.send(msg.value));
@@ -480,14 +471,11 @@ contract teuInitialTokenSale is Ownable {
     * @param _etherAmount ether equivalent amount contributed
     * @param _contributorWallet wallet address of contributor which will be used for referral bonus collection
     * @param _tokenAmount amunt of token distributed to the contributor. For reference only in the event log
-    * @param _contributionDatetime date/time of contribution. For claiming referral bonus.
     */
-    function recordOffChainContribute(uint256 _etherAmount, address _contributorWallet, uint256 _tokenAmount, uint _contributionDatetime) public overMinContribution(_etherAmount) onlyOwner {
+    function recordOffChainContribute(uint256 _etherAmount, address _contributorWallet, uint256 _tokenAmount) public overMinContribution(_etherAmount) onlyOwner {
 
-	    if (_contributionDatetime > lastContribitionDate[_contributorWallet])
-            lastContribitionDate[_contributorWallet] = _contributionDatetime;
-        referralContribution[_contributorWallet] = referralContribution[_contributorWallet].add256(_etherAmount);
-        LogOffChainContribution(_contributorWallet, _etherAmount, _tokenAmount, _contributionDatetime);
+        lastContribitionDate[_contributorWallet] = now;
+        LogOffChainContribution(_contributorWallet, _etherAmount, _tokenAmount);
     }    
 
     /**
@@ -495,8 +483,9 @@ contract teuInitialTokenSale is Ownable {
     * @param _referrerWallet wallet address of referrer.  Referrer must also be a contributor
     */
     function referral(address _referrerWallet) public {
+	require (msg.sender != _referrerWallet);
         require (referralContribution[msg.sender] > 0);
-        require (contribution[_referrerWallet] > 0);
+        require (lastContribitionDate[_referrerWallet] > 0);
         require (getCurrentDatetime() - lastContribitionDate[msg.sender] <= (4 * 24 * 60 * 60));
         
         uint256 _referralBonus = getReferralBonusAmount(referralContribution[msg.sender]);
@@ -532,7 +521,8 @@ contract teuInitialTokenSale is Ownable {
         address client7,
         address client8,
         address client9,
-        address client10, uint8 _valueToSet
+        address client10, 
+	uint8 _valueToSet
     ) public onlyOwner {
         if (client1 != address(0))
             clientIdentRejectList[client1] = _valueToSet;
@@ -562,35 +552,20 @@ contract teuInitialTokenSale is Ownable {
     function setTokenCollectable() public onlyOwner saleIsEnd {
         isCollectTokenStart = true;
     }
-
-    /**
-    * @dev called by contract owner to flag to disable the token collection process
-    */
-    function setTokenUncollectable() public onlyOwner saleIsEnd {
-        isCollectTokenStart = false;
-    }
     
     /**
-    * @dev called by contributor to collect tokens.  If they are rejected by the client identification process, contributed ethers will be returned.
+    * @dev called by contributor to collect tokens.  If they are rejected by the client identification process, error will be thrown
     */
     function collectToken() public tokenIsCollectable {
-	uint256 _cont = contribution[msg.sender];
 	uint256 _collToken = collectableToken[msg.sender];
-        contribution[msg.sender] = 0;
+
+	require(clientIdentRejectList[msg.sender] <= 0);
+        require(_collToken > 0);
+
         collectableToken[msg.sender] = 0;
 
-
-        if (clientIdentRejectList[msg.sender] > 0) {
-            require(_cont > 0);
-            
-            assert(msg.sender.send(_cont));
-            LogTokenCollected(msg.sender, _cont, 0);
-        }
-        else {
-            require(_collToken > 0);
-            token.transfer(msg.sender, _collToken);
-            LogTokenCollected(msg.sender, 0, _collToken);
-        }
+        token.transfer(msg.sender, _collToken);
+        LogTokenCollected(msg.sender, _collToken);
     }
 
     /**
@@ -613,15 +588,6 @@ contract teuInitialTokenSale is Ownable {
     
 
     //  ***** public constant functions ***************
-
-    /**
-    * @dev to get the contribution amount of any contributor
-    * @param _contributor contributor to get the conribution amount
-    */
-    
-    function contributionOf(address _contributor) public constant returns (uint256) {
-        return contribution[_contributor] ;
-    }
 
     /**
     * @dev to get the amount of token collectable by any contributor
