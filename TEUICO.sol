@@ -272,7 +272,7 @@ contract teuInitialTokenSale is Ownable {
     uint                                constant private        saleEnd = 1523498400;
     uint                                constant private        etherToTokenConversionRate = 400;
     uint                                constant private        referralAwardPercent = 20;
-    uint256                             constant private        maxCollectableToken = 20 * 10 ** 9 * 10 ** 18;
+    uint256                             constant private        maxCollectableToken = 20 * 10 ** 6 * 10 ** 18;
 
     mapping (address => uint256)                private     referralContribution;  // record the referral contribution amount in ether for claiming of referral bonus
     mapping (address => uint)                   private     lastContribitionDate;  // record the last contribution date/time for valid the referral bonus claiming period
@@ -452,6 +452,8 @@ contract teuInitialTokenSale is Ownable {
     * @param _contributionDatetime date/time of contribution. For calculating time bonus and claiming referral bonus.
     */
     function contributeByBitcoin(uint256 _bitcoinAmount, uint256 _etherAmount, address _contributorWallet, uint _contributionDatetime) public overMinContribution(_etherAmount) onlyOwner {
+        require(_contributionDatetime <= getCurrentDatetime());
+	
         uint256 _basicToken = getBasicTokenAmount(_etherAmount);
         uint256 _timeBonus = getTimeBonusAmount(_basicToken);
         uint256 _volumeBonus = getVolumeBonusAmount(_basicToken, _etherAmount);
@@ -474,7 +476,7 @@ contract teuInitialTokenSale is Ownable {
     */
     function recordOffChainContribute(uint256 _etherAmount, address _contributorWallet, uint256 _tokenAmount) public overMinContribution(_etherAmount) onlyOwner {
 
-        lastContribitionDate[_contributorWallet] = now;
+        lastContribitionDate[_contributorWallet] = getCurrentDatetime();
         LogOffChainContribution(_contributorWallet, _etherAmount, _tokenAmount);
     }    
 
