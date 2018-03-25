@@ -266,10 +266,10 @@ contract teuInitialTokenSale is Ownable {
 
 
     TeuToken			                constant private		token = TeuToken(0xeEAc3F8da16bb0485a4A11c5128b0518DaC81448); // hard coded due to token already deployed
-    address		                        constant private		etherHolderWallet = 0x3a1655CBe3b52dfFC0534555B866b702083e08ab; // hard coded due to deployment for once only
+    address		                        constant private		etherHolderWallet = 0x00222EaD2D0F83A71F645d3d9634599EC8222830; // hard coded due to deployment for once only
     uint256		                        constant private 	    minContribution = 100 finney;
-    uint                                constant private        saleStart = 1521079200;
-    uint                                constant private        saleEnd = 1523498400;
+    uint                                constant private        saleStart = 1523498400;
+    uint                                constant private        saleEnd = 1526090400;
     uint                                constant private        etherToTokenConversionRate = 400;
     uint                                constant private        referralAwardPercent = 20;
     uint256                             constant private        maxCollectableToken = 20 * 10 ** 6 * 10 ** 18;
@@ -280,6 +280,7 @@ contract teuInitialTokenSale is Ownable {
     mapping (address => uint256)                private     collectableToken;  // record the token amount to be collected of each contributor
     mapping (address => uint8)                  private     clientIdentRejectList;  // record a list of contributors who do not pass the client identification process
     bool                                        private     isCollectTokenStart = false;  // flag to indicate if token collection is started
+    bool                                        public      isAllowContribution = true; // flag to enable/disable contribution.
     uint256                                     public      totalCollectableToken;  // the total amount of token will be colleceted after considering all the contribution and bonus
 
     //  ***** private helper functions ***************
@@ -421,14 +422,45 @@ contract teuInitialTokenSale is Ownable {
         _;
     }
 
+    /**
+    * @dev called by owner to set the new sale start date/time 
+    * @param _newStart new start date/time
+    */
+    function setNewStart(uint _newStart) public onlyOwner {
+	require(saleStart > getCurrentDatetime());
+        require(_newStart > getCurrentDatetime());
+	require(saleEnd > _newStart);
+        saleStart = _newStart;
+    }
 
-    //  ***** public transactional functions ***************
+    /**
+    * @dev called by owner to set the new sale end date/time 
+    * @param _newEnd new end date/time
+    */
+    function setNewEnd(uint _newEnd) public onlyOwner {
+	require(saleEnd < getCurrentDatetime());
+        require(_newEnd < getCurrentDatetime());
+	require(_newEnd > saleStart);
+        saleEnd = _newEnd;
+    }
+
+    /**
+    * @dev called by owner to enable / disable contribution 
+    * @param _isAllow true - allow contribution; false - disallow contribution
+    */
+    function enableContribution(bool _isAllow) public onlyOwner {
+        isAllowContribution = _isAllow;
+    }
+
+
+//  ***** public transactional functions ***************
+
 
 
     /**
     * @dev called by contributors to record a contribution 
     */
-    function contribute() public payable saleIsOn overMinContribution(msg.value) underMaxTokenPool {
+    function contribute() public payable saleIsOn overMinContribution(msg.value) underMaxTokenPool contributionAllowed {
         uint256 _basicToken = getBasicTokenAmount(msg.value);
         uint256 _timeBonus = getTimeBonusAmount(_basicToken);
         uint256 _volumeBonus = getVolumeBonusAmount(_basicToken, msg.value);
@@ -451,7 +483,7 @@ contract teuInitialTokenSale is Ownable {
     * @param _contributorWallet wallet address of contributor which will be used for token collection
     * @param _contributionDatetime date/time of contribution. For calculating time bonus and claiming referral bonus.
     */
-    function contributeByBitcoin(uint256 _bitcoinAmount, uint256 _etherAmount, address _contributorWallet, uint _contributionDatetime) public overMinContribution(_etherAmount) onlyOwner {
+    function contributeByBitcoin(uint256 _bitcoinAmount, uint256 _etherAmount, address _contributorWallet, uint _contributionDatetime) public overMinContribution(_etherAmount) onlyOwner contributionAllowed {
         require(_contributionDatetime <= getCurrentDatetime());
 	
         uint256 _basicToken = getBasicTokenAmount(_etherAmount);
@@ -500,59 +532,24 @@ contract teuInitialTokenSale is Ownable {
     }
     
     /**
-    * @dev called by contract owener to register a list of rejected clients who cannot pass the client identification process.  At most 10 clients can be set at a time
-    * @param client1 wallet address of client #1
-    * @param client2 wallet address of client #2
-    * @param client3 wallet address of client #3
-    * @param client4 wallet address of client #4
-    * @param client5 wallet address of client #5
-    * @param client6 wallet address of client #6
-    * @param client7 wallet address of client #7
-    * @param client8 wallet address of client #8
-    * @param client9 wallet address of client #9
-    * @param client10 wallet address of client #10
+    * @dev called by contract owener to register a list of rejected clients who cannot pass the client identification process.
+    * @param _clients an array of wallet address clients to be set
     * @param _valueToSet  1 - add to reject list, 0 - remove from reject list
     */
-    function setClientIdentRejectList(
-        address client1,
-        address client2,
-        address client3,
-        address client4,
-        address client5,
-        address client6,
-        address client7,
-        address client8,
-        address client9,
-        address client10, 
-	uint8 _valueToSet
-    ) public onlyOwner {
-        if (client1 != address(0))
-            clientIdentRejectList[client1] = _valueToSet;
-        if (client2 != address(0))
-            clientIdentRejectList[client2] = _valueToSet;
-        if (client3 != address(0))
-            clientIdentRejectList[client3] = _valueToSet;
-        if (client4 != address(0))
-            clientIdentRejectList[client4] = _valueToSet;
-        if (client5 != address(0))
-            clientIdentRejectList[client5] = _valueToSet;
-        if (client6 != address(0))
-            clientIdentRejectList[client6] = _valueToSet;
-        if (client7 != address(0))
-            clientIdentRejectList[client7] = _valueToSet;
-        if (client8 != address(0))
-            clientIdentRejectList[client8] = _valueToSet;
-        if (client9 != address(0))
-            clientIdentRejectList[client9] = _valueToSet;
-        if (client10 != address(0))
-            clientIdentRejectList[client10] = _valueToSet;
-    }
+    function setClientIdentRejectList(address[] _clients, uint8 _valueToSet) public onlyOwner {
+        for (uint i = 0; i < _clients.length; i++) {
+            if (_clients[i] != address(0) && clientIdentRejectList[_clients[i]] != _valueToSet) {
+                clientIdentRejectList[_clients[i]] = _valueToSet;
+                LogClientIdentRejectListChange(_clients[i], _valueToSet);
+            }
+        }
     
     /**
-    * @dev called by contract owner to flag to start the token collection process
+    * @dev called by contract owner to enable / disable token collection process
+    * @param _enable true - enable collection; false - disable collection
     */
-    function setTokenCollectable() public onlyOwner saleIsEnd {
-        isCollectTokenStart = true;
+    function setTokenCollectable(bool _enable) public onlyOwner saleIsEnd {
+        isCollectTokenStart = _enable;
     }
     
     /**
